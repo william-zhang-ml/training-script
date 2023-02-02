@@ -5,10 +5,12 @@ This script uses the torchvision MNIST interface,
 and assumes there is an environment variable MNIST_PATH pointing to the data.
 """
 import argparse
+import json
 import os
 from torch import nn
 from torch import optim
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, Normalize, ToTensor
 from tqdm import tqdm
@@ -17,25 +19,34 @@ from components import classifiers
 
 # define default config
 CONFIG = {
+    'out_dir':    None,
+    'run_name':   None,
     'batch_size': 32,
     'num_epochs': 1
 }
 TYPES = {
+    'out_dir':    str,
+    'run_name':   str,
     'batch_size': int,
     'num_epochs': int
 }
 HELP = {
+    'out_dir':    '(str) directory in which to save outputs',
+    'run_name':   '(str) identifier used to tell current run from others',
     'batch_size': '(int) number of training images per gradient step',
     'num_epochs': '(int) number of training epochs'
 }
 
 
-def train(dataset: DataLoader, model: nn.Module) -> None:
+def train(dataset: DataLoader,
+          model: nn.Module,
+          board: SummaryWriter = None) -> None:
     """Train model.
 
     Args:
         dataset (DataLoader): batches on which to train.
         model (nn.Module): classification model to train (modified inplace).
+        board (SummaryWriter): torch tensorboard instance
     """
     optimizer = optim.SGD(model.parameters(), lr=1e-3)
     criterion = nn.CrossEntropyLoss()
@@ -87,6 +98,20 @@ if __name__ == '__main__':
         )
     CONFIG.update(vars(parser.parse_args()))
 
+    # setup output subdirectories
+    run_dir = os.path.join(CONFIG['out_dir'], 'runs', CONFIG['run_name'])
+    tb_dir = \
+        os.path.join(CONFIG['out_dir'], '_tensorboard', CONFIG['run_name'])
+    if os.path.isdir(run_dir):
+        raise FileExistsError('found preexisting run at desired location.')
+    os.makedirs(run_dir)
+    my_board = SummaryWriter(tb_dir)
+
+    # write config to JSON
+    file_name = os.path.join(run_dir, 'config.json')
+    with open(file_name, 'w', encoding='UTF-8') as file:
+        json.dump(CONFIG, file, indent=4)
+
     # load datasets
     data_train = DataLoader(
         batch_size=CONFIG['batch_size'],
@@ -112,6 +137,16 @@ if __name__ == '__main__':
 
     # main
     train(data_train, my_model)
-    train_acc = compute_accuracy(data_train, my_model)
-    val_acc = compute_accuracy(data_val, my_model)
-    print(train_acc, val_acc)
+    acc_train = compute_accuracy(data_train, my_model)
+    acc_val = compute_accuracy(data_val, my_model)
+    my_board.add_hparams(
+        {
+            'batch_size': CONFIG['batch_size'],
+            'num_epochs': CONFIG['num_epochs']
+        },
+        {
+            'ACC/train': acc_train,
+            'ACC/val': acc_val
+        },
+        run_name=CONFIG['run_name']
+    )
