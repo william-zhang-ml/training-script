@@ -4,6 +4,7 @@ MNIST classifier training script.
 This script uses the torchvision MNIST interface,
 and assumes there is an environment variable MNIST_PATH pointing to the data.
 """
+import argparse
 import os
 from torch import nn
 from torch import optim
@@ -14,7 +15,19 @@ from tqdm import tqdm
 from components import classifiers
 
 
-num_epochs: int = 1
+# define default config
+CONFIG = {
+    'batch_size': 32,
+    'num_epochs': 1
+}
+TYPES = {
+    'batch_size': int,
+    'num_epochs': int
+}
+HELP = {
+    'batch_size': '(int) number of training images per gradient step',
+    'num_epochs': '(int) number of training epochs'
+}
 
 
 def train(dataset: DataLoader, model: nn.Module) -> None:
@@ -26,7 +39,7 @@ def train(dataset: DataLoader, model: nn.Module) -> None:
     """
     optimizer = optim.SGD(model.parameters(), lr=1e-3)
     criterion = nn.CrossEntropyLoss()
-    progbar = tqdm(range(num_epochs))
+    progbar = tqdm(range(CONFIG['num_epochs']))
     num_batches = len(data_train)
     for curr_epoch in progbar:
         for i_batch, (images, labels) in enumerate(dataset):
@@ -63,9 +76,20 @@ def compute_accuracy(dataset: DataLoader, model: nn.Module) -> float:
 
 
 if __name__ == '__main__':
+    # overwrite default config values w/CLI inputs
+    parser = argparse.ArgumentParser()
+    for arg_name, default_val in CONFIG.items():
+        parser.add_argument(
+            arg_name if default_val is None else f'--{arg_name}',
+            default=default_val,
+            help=HELP[arg_name],
+            type=TYPES[arg_name]
+        )
+    CONFIG.update(vars(parser.parse_args()))
+
     # load datasets
     data_train = DataLoader(
-        batch_size=32,
+        batch_size=CONFIG['batch_size'],
         dataset=MNIST(
             os.environ['MNIST_PATH'],
             train=True,
@@ -74,7 +98,7 @@ if __name__ == '__main__':
         shuffle=True,
     )
     data_val = DataLoader(
-        batch_size=32,
+        batch_size=CONFIG['batch_size'],
         dataset=MNIST(
             os.environ['MNIST_PATH'],
             train=False,
