@@ -21,18 +21,24 @@ from components import classifiers
 CONFIG = {
     'out_dir':    None,
     'run_name':   None,
+    'cls_class':  None,
+    'cls_kwargs': None,
     'batch_size': 32,
     'num_epochs': 1
 }
 TYPES = {
     'out_dir':    str,
     'run_name':   str,
+    'cls_class':  str,
+    'cls_kwargs': json.loads,
     'batch_size': int,
     'num_epochs': int
 }
 HELP = {
     'out_dir':    '(str) directory in which to save outputs',
     'run_name':   '(str) identifier used to tell current run from others',
+    'cls_class':  '(str) classifier class name',
+    'cls_kwargs': '(dict) classifier initialize args',
     'batch_size': '(int) number of training images per gradient step',
     'num_epochs': '(int) number of training epochs'
 }
@@ -100,8 +106,7 @@ if __name__ == '__main__':
 
     # setup output subdirectories
     run_dir = os.path.join(CONFIG['out_dir'], 'runs', CONFIG['run_name'])
-    tb_dir = \
-        os.path.join(CONFIG['out_dir'], '_tensorboard', CONFIG['run_name'])
+    tb_dir = os.path.join(CONFIG['out_dir'], '_tensorboard')
     if os.path.isdir(run_dir):
         raise FileExistsError('found preexisting run at desired location.')
     os.makedirs(run_dir)
@@ -133,17 +138,21 @@ if __name__ == '__main__':
     )
 
     # initialize model
-    my_model = classifiers.AvgPoolClassifier(in_channels=1, num_classes=10)
+    my_model = getattr(classifiers, CONFIG['cls_class'])(
+        **CONFIG['cls_kwargs'])  # pylint: disable=not-a-mapping
 
     # main
     train(data_train, my_model)
     acc_train = compute_accuracy(data_train, my_model)
     acc_val = compute_accuracy(data_val, my_model)
+    hparams = {
+        'batch_size': CONFIG['batch_size'],
+        'num_epochs': CONFIG['num_epochs'],
+        'cls': CONFIG['cls_class']
+    }
+    hparams.update(CONFIG['cls_kwargs'])
     my_board.add_hparams(
-        {
-            'batch_size': CONFIG['batch_size'],
-            'num_epochs': CONFIG['num_epochs']
-        },
+        hparams,
         {
             'ACC/train': acc_train,
             'ACC/val': acc_val
