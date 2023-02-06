@@ -15,32 +15,39 @@ from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, Normalize, ToTensor
 from tqdm import tqdm
 from components import classifiers
+import stems
 
 
 # define default config
 CONFIG = {
-    'out_dir':    None,
-    'run_name':   None,
-    'cls_class':  None,
-    'cls_kwargs': None,
-    'batch_size': 32,
-    'num_epochs': 1
+    'out_dir':     None,
+    'run_name':    None,
+    'cls_class':   None,
+    'cls_kwargs':  None,
+    'stem_class':  None,
+    'stem_kwargs': None,
+    'batch_size':  32,
+    'num_epochs':  1
 }
 TYPES = {
-    'out_dir':    str,
-    'run_name':   str,
-    'cls_class':  str,
-    'cls_kwargs': json.loads,
-    'batch_size': int,
-    'num_epochs': int
+    'out_dir':     str,
+    'run_name':    str,
+    'cls_class':   str,
+    'cls_kwargs':  json.loads,
+    'stem_class':  str,
+    'stem_kwargs': json.loads,
+    'batch_size':  int,
+    'num_epochs':  int
 }
 HELP = {
-    'out_dir':    '(str) directory in which to save outputs',
-    'run_name':   '(str) identifier used to tell current run from others',
-    'cls_class':  '(str) classifier class name',
-    'cls_kwargs': '(dict) classifier initialize args',
-    'batch_size': '(int) number of training images per gradient step',
-    'num_epochs': '(int) number of training epochs'
+    'out_dir':     '(str) directory in which to save outputs',
+    'run_name':    '(str) identifier used to tell current run from others',
+    'cls_class':   '(str) classifier class name',
+    'cls_kwargs':  '(dict) classifier initialize args',
+    'stem_class':  '(str) stem class name',
+    'stem_kwargs': '(dict) stem initialize args',
+    'batch_size':  '(int) number of training images per gradient step',
+    'num_epochs':  '(int) number of training epochs'
 }
 
 
@@ -58,6 +65,7 @@ def train(dataset: DataLoader,
     criterion = nn.CrossEntropyLoss()
     progbar = tqdm(range(CONFIG['num_epochs']))
     num_batches = len(data_train)
+    global_step = 1
     for curr_epoch in progbar:
         for i_batch, (images, labels) in enumerate(dataset):
             # process batch
@@ -67,11 +75,20 @@ def train(dataset: DataLoader,
             loss.backward()
             optimizer.step()
 
+            # tensorboard and logging
+            if board:
+                board.add_scalar(
+                    'CCE/train',
+                    float(loss),
+                    global_step
+                )
+
             # update iteration variables
             progbar.set_postfix({
                 'batch': f'{i_batch + 1}/{num_batches}',
                 'loss': float(loss)
             })
+            global_step += 1
 
 
 def compute_accuracy(dataset: DataLoader, model: nn.Module) -> float:
@@ -138,8 +155,11 @@ if __name__ == '__main__':
     )
 
     # initialize model
-    my_model = getattr(classifiers, CONFIG['cls_class'])(
+    stem = getattr(stems, CONFIG['stem_class'])(
+        **CONFIG['stem_kwargs'])  # pylint: disable=not-a-mapping
+    classifier = getattr(classifiers, CONFIG['cls_class'])(
         **CONFIG['cls_kwargs'])  # pylint: disable=not-a-mapping
+    my_model = nn.Sequential(stem, classifier)
 
     # main
     train(data_train, my_model)
@@ -148,9 +168,16 @@ if __name__ == '__main__':
     hparams = {
         'batch_size': CONFIG['batch_size'],
         'num_epochs': CONFIG['num_epochs'],
-        'cls': CONFIG['cls_class']
+        'cls': CONFIG['cls_class'],
+        'stem': CONFIG['stem_class']
     }
-    hparams.update(CONFIG['cls_kwargs'])
+
+    # arch subcomponents may have overlapping arg names ... so I add a tag
+    for arg_name, arg_val in CONFIG['cls_kwargs'].items():
+        hparams[f'cls_{arg_name}'] = arg_val
+    for arg_name, arg_val in CONFIG['stem_kwargs'].items():
+        hparams[f'stem_{arg_name}'] = arg_val
+
     my_board.add_hparams(
         hparams,
         {
